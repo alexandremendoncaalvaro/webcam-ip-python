@@ -22,11 +22,28 @@ Uma aplicação desktop para transmitir webcam, vídeos ou imagens através de H
 
 ## 📋 Requisitos
 
+### Para o Executável
+
+- Windows 10/11
+- Webcam ou arquivos de mídia para transmitir
+
+### Para Desenvolvimento
+
 - Python 3.8 ou superior
 - Windows 10/11
 - Webcam ou arquivos de mídia para transmitir
 
 ## 🚀 Instalação
+
+### Método 1: Executável (Recomendado)
+
+1. Acesse a [página de releases](https://github.com/seu-usuario/webcam-ip-python/releases)
+2. Baixe a versão mais recente do `Webcam.IP.Server.exe`
+3. Execute o arquivo baixado
+   - Não é necessário instalação
+   - Não requer Python ou outras dependências
+
+### Método 2: Código Fonte (Para Desenvolvimento)
 
 1. Clone o repositório:
 
@@ -50,11 +67,10 @@ pip install -r requirements.txt
 
 ## 💻 Uso
 
-1. Execute o programa:
+1. Inicie o programa:
 
-```bash
-python webcam_ip.py
-```
+   - Clique duas vezes no executável baixado, ou
+   - Execute `python webcam_ip.py` se estiver usando o código fonte
 
 2. Na interface:
 
@@ -100,6 +116,9 @@ python webcam_ip.py
 - A porta selecionada deve estar disponível
 - Firewall pode precisar de liberação para acesso externo
 - Em caso de erro, verifique se a porta não está em uso
+- Alguns antivírus podem bloquear o executável (falso positivo)
+  - Adicione uma exceção se necessário
+  - O código fonte está disponível para verificação
 
 ## 🐛 Problemas Conhecidos
 
@@ -116,6 +135,18 @@ python webcam_ip.py
 - URLs clicáveis para fácil acesso
 - Suporte a múltiplas câmeras
 - Melhor tratamento de erros
+- Disponibilização de executável para fácil instalação
+
+## 📦 Releases
+
+As releases estão disponíveis na [página de releases](https://github.com/seu-usuario/webcam-ip-python/releases) do projeto.
+
+Cada release inclui:
+
+- Executável standalone (`Webcam.IP.Server.exe`)
+- Código fonte (zip/tar.gz)
+- Notas de atualização
+- Lista de mudanças
 
 ## 🤝 Contribuindo
 
