@@ -48,7 +48,7 @@ Uma aplicação desktop para transmitir webcam, vídeos ou imagens através de H
 1. Clone o repositório:
 
 ```bash
-git clone https://github.com/seu-usuario/webcam-ip-python.git
+git clone https://github.com/alexandremendoncaalvaro/webcam-ip-python.git
 cd webcam-ip-python
 ```
 
@@ -139,7 +139,7 @@ pip install -r requirements.txt
 
 ## 📦 Releases
 
-As releases estão disponíveis na [página de releases](https://github.com/seu-usuario/webcam-ip-python/releases) do projeto.
+As releases estão disponíveis na [página de releases](https://github.com/alexandremendoncaalvaro/webcam-ip-python/releases) do projeto.
 
 Cada release inclui:
 
