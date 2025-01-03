@@ -4,3 +4,4 @@ pillow
 websockets
 simple-websocket-server
 comtypes
+psutil

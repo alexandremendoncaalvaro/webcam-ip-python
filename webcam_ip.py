@@ -13,6 +13,7 @@ import os
 from typing import Union, Dict, List
 import subprocess
 import re
+import psutil
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
@@ -41,12 +42,17 @@ class WebcamIPApp:
         self.current_source = None
         self.video_path = None
         self.image_path = None
+        self.loop = None
         
         # Source types
         self.source_types = [StreamSource.WEBCAM, StreamSource.VIDEO, StreamSource.IMAGE]
         
         # Streaming protocols
         self.protocols = ['HTTP', 'WebSocket']
+        
+        # Add HTTP server variable
+        self.flask_app = None
+        self.http_server = None
         
         # Create GUI elements
         self.create_gui()
@@ -338,55 +344,187 @@ class WebcamIPApp:
             logging.error(f"Error in generate_frames: {str(e)}")
             return
     
+    def lock_controls(self, locked: bool):
+        """Lock or unlock controls when streaming is active."""
+        state = "disabled" if locked else "normal"
+        self.source_type_combo.config(state="disabled" if locked else "readonly")
+        self.camera_combo.config(state="disabled" if locked else "readonly")
+        self.source_button.config(state=state)
+        self.resolution_combo.config(state="disabled" if locked else "readonly")
+        self.protocol_combo.config(state="disabled" if locked else "readonly")
+        self.port_entry.config(state=state)
+
     def run_http_server(self):
-        app = Flask(__name__)
-        
-        @app.route('/')
-        def index():
-            return """
-            <html>
-              <body>
-                <img src="/video_feed" width="100%">
-              </body>
-            </html>
-            """
-        
-        @app.route('/video_feed')
-        def video_feed():
-            return Response(
-                (b'--frame\r\n'
-                 b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
-                 for frame in self.generate_frames()),
-                mimetype='multipart/x-mixed-replace; boundary=frame'
-            )
-        
-        port = int(self.port_entry.get())
-        app.run(host='0.0.0.0', port=port, threaded=True)
-    
-    async def websocket_handler(self, websocket, path):
         try:
-            for frame in self.generate_frames():
+            port = int(self.port_entry.get())
+            self.flask_app = Flask(__name__)
+            
+            @self.flask_app.route('/')
+            def index():
+                return """
+                <html>
+                  <body>
+                    <img src="/video_feed" width="100%">
+                  </body>
+                </html>
+                """
+            
+            @self.flask_app.route('/video_feed')
+            def video_feed():
+                return Response(
+                    (b'--frame\r\n'
+                     b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
+                     for frame in self.generate_frames()),
+                    mimetype='multipart/x-mixed-replace; boundary=frame'
+                )
+            
+            # Use a thread-safe way to run the server
+            from werkzeug.serving import make_server
+            import socket
+
+            # Create socket and bind it
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(('0.0.0.0', port))
+            
+            # Create server with the socket
+            self.http_server = make_server('0.0.0.0', port, self.flask_app, threaded=True)
+            self.http_server._socket = sock  # Use the pre-bound socket
+            
+            logging.info(f"HTTP server starting on port {port}")
+            self.http_server.serve_forever()
+            
+        except Exception as e:
+            logging.error(f"HTTP server error: {str(e)}")
+            self.cleanup_http_server()
+
+    def cleanup_http_server(self):
+        """Clean up HTTP server resources."""
+        try:
+            if self.http_server:
+                logging.info("Shutting down HTTP server...")
+                self.http_server.shutdown()
+                self.http_server.server_close()
+                self.http_server = None
+            
+            if self.flask_app:
+                self.flask_app = None
+                
+            # Kill any remaining processes using the port
+            port = self.port_entry.get()
+            try:
+                import psutil
+                for proc in psutil.process_iter(['pid', 'name', 'connections']):
+                    try:
+                        for conn in proc.connections():
+                            if conn.laddr.port == int(port):
+                                psutil.Process(proc.pid).terminate()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+            except Exception as e:
+                logging.error(f"Error killing processes: {str(e)}")
+                
+        except Exception as e:
+            logging.error(f"Error during HTTP cleanup: {str(e)}")
+        finally:
+            self.stream_active = False
+            self.stream_button.config(text="Start Server")
+            self.url_label.config(text="Stream URL: Not started")
+            self.lock_controls(False)
+
+    async def websocket_handler(self, websocket):
+        """Handle WebSocket connection."""
+        try:
+            logging.info("New WebSocket client connected")
+            async for frame in self.generate_frames_async():
                 if not self.stream_active:
                     break
-                await websocket.send(frame)
-                await asyncio.sleep(0.033)  # ~30 FPS
-        except websockets.exceptions.ConnectionClosed:
-            pass
-    
+                try:
+                    await websocket.send(frame)
+                    await asyncio.sleep(0.033)  # ~30 FPS
+                except websockets.exceptions.ConnectionClosed:
+                    logging.info("WebSocket client disconnected")
+                    break
+        except Exception as e:
+            logging.error(f"Error in websocket_handler: {str(e)}")
+        finally:
+            logging.info("WebSocket connection closed")
+
+    async def generate_frames_async(self):
+        """Async generator for video frames."""
+        try:
+            source = self.get_current_source()
+            if isinstance(source, str):  # Image path
+                frame = cv2.imread(source)
+                while self.stream_active:
+                    ret, buffer = cv2.imencode('.jpg', frame)
+                    if ret:
+                        yield buffer.tobytes()
+                    await asyncio.sleep(0.033)
+            else:  # VideoCapture
+                while self.stream_active:
+                    ret, frame = source.read()
+                    if not ret:
+                        if self.source_type_combo.get() == StreamSource.VIDEO:
+                            source.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                            continue
+                        break
+                    
+                    ret, buffer = cv2.imencode('.jpg', frame)
+                    if ret:
+                        yield buffer.tobytes()
+                    await asyncio.sleep(0.033)
+                source.release()
+        except Exception as e:
+            logging.error(f"Error in generate_frames_async: {str(e)}")
+            return
+
     def run_websocket_server(self):
-        port = int(self.port_entry.get())
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        async def serve():
+            port = int(self.port_entry.get())
+            self.ws_server = await websockets.serve(self.websocket_handler, "0.0.0.0", port)
+            logging.info(f"WebSocket server started on port {port}")
+            await self.ws_server.wait_closed()
         
-        start_server = websockets.serve(
-            self.websocket_handler,
-            "0.0.0.0",
-            port
-        )
-        
-        self.ws_server = loop.run_until_complete(start_server)
-        loop.run_forever()
-    
+        try:
+            # Create a new event loop
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            
+            # Run the server in the event loop
+            self.loop.run_until_complete(serve())
+            self.loop.run_forever()
+        except Exception as e:
+            logging.error(f"WebSocket server error: {str(e)}")
+        finally:
+            self.cleanup_websocket_server()
+
+    def cleanup_websocket_server(self):
+        """Clean up WebSocket server resources."""
+        try:
+            if self.ws_server:
+                # Close the server
+                if not self.loop.is_closed():
+                    self.loop.run_until_complete(self.ws_server.close())
+                self.ws_server = None
+
+            # Clean up the event loop
+            if self.loop:
+                if self.loop.is_running():
+                    self.loop.stop()
+                if not self.loop.is_closed():
+                    pending = asyncio.all_tasks(self.loop)
+                    self.loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                    self.loop.close()
+                self.loop = None
+        except Exception as e:
+            logging.error(f"Error during WebSocket cleanup: {str(e)}")
+        finally:
+            self.stream_active = False
+            self.stream_button.config(text="Start Server")
+            self.url_label.config(text="Stream URL: Not started")
+            self.lock_controls(False)
+
     def get_local_ip(self):
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -400,6 +538,10 @@ class WebcamIPApp:
     def toggle_stream(self):
         if not self.stream_active:
             try:
+                # Ensure any existing server is cleaned up
+                self.cleanup_websocket_server()
+                self.cleanup_http_server()
+                
                 source = self.get_current_source()
                 if isinstance(source, str):  # Image path
                     if not os.path.exists(source):
@@ -415,26 +557,69 @@ class WebcamIPApp:
                 port = int(self.port_entry.get())
                 ip = self.get_local_ip()
                 
+                # Lock controls while streaming
+                self.lock_controls(True)
+                
                 if protocol == "HTTP":
-                    self.server_thread = threading.Thread(target=self.run_http_server)
-                    self.server_thread.daemon = True
+                    self.server_thread = threading.Thread(target=self.run_http_server, daemon=True)
                     self.server_thread.start()
-                    self.url_label.config(text=f"Stream URL: http://{ip}:{port}")
+                    self.url_label.config(text=f"Stream URL: http://{ip}:{port}/video_feed")
                 
                 elif protocol == "WebSocket":
-                    self.server_thread = threading.Thread(target=self.run_websocket_server)
-                    self.server_thread.daemon = True
+                    self.server_thread = threading.Thread(target=self.run_websocket_server, daemon=True)
                     self.server_thread.start()
                     self.url_label.config(text=f"Stream URL: ws://{ip}:{port}")
+                    
+                    # Create an example HTML file for WebSocket client
+                    example_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Camera Stream</title>
+</head>
+<body>
+    <h2>Camera Stream</h2>
+    <canvas id="videoCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('videoCanvas');
+        const ctx = canvas.getContext('2d');
+        const ws = new WebSocket('ws://{ip}:{port}');
+        
+        ws.onmessage = function(event) {{
+            const reader = new FileReader();
+            reader.onload = function() {{
+                const img = new Image();
+                img.onload = function() {{
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                }};
+                img.src = reader.result;
+            }};
+            reader.readAsDataURL(event.data);
+        }};
+    </script>
+</body>
+</html>
+"""
+                    os.makedirs('client-html-example', exist_ok=True)
+                    with open('client-html-example/index.html', 'w') as f:
+                        f.write(example_html)
+                    self.url_label.config(text=f"Stream URL: ws://{ip}:{port}\nExample client: client-html-example/index.html")
+            
             except Exception as e:
                 tk.messagebox.showerror("Error", str(e))
+                if self.protocol_combo.get() == "HTTP":
+                    self.cleanup_http_server()
+                else:
+                    self.cleanup_websocket_server()
                 return
         else:
-            self.stream_active = False
-            self.stream_button.config(text="Start Server")
-            self.url_label.config(text="Stream URL: Not started")
-            if self.ws_server:
-                self.ws_server.close()
+            self.stream_active = False  # Set this first to stop frame generation
+            if self.protocol_combo.get() == "HTTP":
+                self.cleanup_http_server()
+            else:
+                self.cleanup_websocket_server()
 
 if __name__ == "__main__":
     root = tk.Tk()

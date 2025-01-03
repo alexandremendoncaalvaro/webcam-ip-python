@@ -1,25 +1,30 @@
+
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Webcam IP Client</title>
-    <style>
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f0f0f0;
-        }
-        img {
-            border: 1px solid #ccc;
-        }
-    </style>
+    <title>WebSocket Camera Stream</title>
 </head>
 <body>
-    <img id="video" alt="Webcam IP Stream" />
-    <script src="client.js"></script>
+    <h2>Camera Stream</h2>
+    <canvas id="videoCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('videoCanvas');
+        const ctx = canvas.getContext('2d');
+        const ws = new WebSocket('ws://192.168.68.125:5000');
+        
+        ws.onmessage = function(event) {
+            const reader = new FileReader();
+            reader.onload = function() {
+                const img = new Image();
+                img.onload = function() {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                };
+                img.src = reader.result;
+            };
+            reader.readAsDataURL(event.data);
+        };
+    </script>
 </body>
 </html>
