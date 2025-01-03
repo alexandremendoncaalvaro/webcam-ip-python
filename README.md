@@ -37,8 +37,8 @@ Uma aplicação desktop para transmitir webcam, vídeos ou imagens através de H
 
 ### Método 1: Executável (Recomendado)
 
-1. Acesse a [página de releases](https://github.com/seu-usuario/webcam-ip-python/releases)
-2. Baixe a versão mais recente do `Webcam.IP.Server.exe`
+1. Acesse a [página de releases](https://github.com/alexandremendoncaalvaro/webcam-ip-python/releases)
+2. Baixe a versão mais recente do `Webcam_IP_Server_v.2.0.14_Win.zip`
 3. Execute o arquivo baixado
    - Não é necessário instalação
    - Não requer Python ou outras dependências
