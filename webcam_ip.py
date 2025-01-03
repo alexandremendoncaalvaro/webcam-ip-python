@@ -1,19 +1,16 @@
 import cv2
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog
 from PIL import Image, ImageTk
 import threading
 from flask import Flask, Response
 import socket
 import asyncio
 import websockets
-import json
 import logging
 import os
 from typing import Union, Dict, List
 import subprocess
-import re
-import psutil
 import time
 
 # Configure logging
