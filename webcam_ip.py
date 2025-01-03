@@ -1,6 +1,6 @@
 import cv2
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 import threading
 from flask import Flask, Response
@@ -11,6 +11,16 @@ import json
 import logging
 import os
 from typing import Union, Dict, List
+import subprocess
+import re
+
+# Configure logging
+logging.basicConfig(level=logging.INFO,
+                   format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Log OpenCV version and backend info
+logging.info(f"OpenCV Version: {cv2.__version__}")
+logging.info(f"OpenCV Backend: {cv2.getBuildInformation()}")
 
 class StreamSource:
     WEBCAM = "Webcam"
@@ -43,7 +53,7 @@ class WebcamIPApp:
         
         # Get available cameras
         self.available_cameras = self.get_available_cameras()
-        camera_names = [f"{info['name']} ({info['index']})" for info in self.available_cameras]
+        camera_names = [info['name'] for info in self.available_cameras]
         self.camera_combo['values'] = camera_names
         if self.available_cameras:
             self.camera_combo.current(0)
@@ -119,22 +129,77 @@ class WebcamIPApp:
     
     def get_available_cameras(self) -> List[Dict[str, Union[int, str]]]:
         cameras = []
-        for i in range(10):
-            cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
-            if cap.isOpened():
-                # Try to get the device name
-                name = f"Camera {i}"  # Default name
+        try:
+            # Get camera names using PowerShell with more specific query
+            cmd = '''
+            Get-PnpDevice -Class 'Image' -Status 'OK' | 
+            Where-Object { $_.FriendlyName -match 'camera|webcam|ivCam' } | 
+            Select-Object FriendlyName |
+            Format-List
+            '''
+            result = subprocess.run(['powershell', '-Command', cmd], capture_output=True, text=True)
+            
+            # Parse PowerShell output to get camera names
+            camera_names = []
+            for line in result.stdout.split('\n'):
+                line = line.strip()
+                if line.startswith('FriendlyName'):
+                    name = line.split(':', 1)[1].strip()
+                    if name and not name.lower().startswith('microsoft'):  # Filter out virtual cameras
+                        camera_names.append(name)
+            
+            logging.info(f"Found camera names from Windows: {camera_names}")
+            
+            # Try each index for real cameras - reversed order to match Windows order
+            test_indices = [0, 1, 2]  # Simplified indices list
+            found_cameras = []  # Temporary list to store found cameras
+            
+            for idx in test_indices:
                 try:
-                    name = cap.getBackendName()
-                    # Additional properties to try identifying the camera
-                    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    name = f"{name} ({width}x{height})"
-                except:
-                    pass
-                
-                cameras.append({"index": i, "name": name})
-                cap.release()
+                    cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+                    if cap.isOpened():
+                        # Read one frame to ensure camera is working
+                        ret, _ = cap.read()
+                        if ret:
+                            # Get camera properties
+                            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                            
+                            # Store camera info with index
+                            found_cameras.append({
+                                "index": idx,
+                                "width": width,
+                                "height": height
+                            })
+                            
+                            # Log successful camera detection
+                            logging.info(f"Successfully opened camera at index {idx}")
+                        
+                        cap.release()
+                    
+                except Exception as e:
+                    logging.debug(f"Error checking camera {idx}: {str(e)}")
+                    continue
+            
+            # Match found cameras with names in correct order
+            for i, name in enumerate(camera_names):
+                if i < len(found_cameras):
+                    camera_info = found_cameras[i]
+                    name = f"{name} ({camera_info['width']}x{camera_info['height']})"
+                    cameras.append({"index": camera_info['index'], "name": name})
+            
+            logging.info(f"Found cameras at indices: {[c['index'] for c in cameras]}")
+        
+        except Exception as e:
+            logging.error(f"Error enumerating cameras: {str(e)}")
+        
+        if not cameras:
+            # If no cameras were found, add a dummy entry
+            cameras.append({"index": 0, "name": "No cameras found"})
+            logging.warning("No cameras were detected")
+        else:
+            logging.info(f"Final camera list: {[c['name'] for c in cameras]}")
+        
         return cameras
     
     def on_source_type_changed(self, event):
@@ -142,7 +207,7 @@ class WebcamIPApp:
         if source_type == StreamSource.WEBCAM:
             self.camera_combo.grid()
             self.source_button.grid_remove()
-            camera_names = [f"{info['name']} ({info['index']})" for info in self.available_cameras]
+            camera_names = [info['name'] for info in self.available_cameras]
             self.camera_combo['values'] = camera_names
             if self.available_cameras:
                 self.camera_combo.current(0)
@@ -167,12 +232,35 @@ class WebcamIPApp:
     def get_current_source(self):
         source_type = self.source_type_combo.get()
         if source_type == StreamSource.WEBCAM:
+            # Get the actual camera index that was stored
             camera_idx = self.available_cameras[self.camera_combo.current()]["index"]
-            return cv2.VideoCapture(camera_idx, cv2.CAP_DSHOW)
+            
+            # Always use DirectShow for consistency
+            cap = cv2.VideoCapture(camera_idx, cv2.CAP_DSHOW)
+            
+            if not cap.isOpened():
+                raise ValueError(f"Could not open camera {camera_idx}")
+            
+            # Read one frame to ensure camera is working
+            ret, _ = cap.read()
+            if not ret:
+                cap.release()
+                raise ValueError(f"Could not read from camera {camera_idx}")
+            
+            # Set resolution
+            width, height = map(int, self.resolution_combo.get().split('x'))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            
+            return cap
+            
         elif source_type == StreamSource.VIDEO:
             if not self.video_path:
                 raise ValueError("No video file selected")
-            return cv2.VideoCapture(self.video_path)
+            cap = cv2.VideoCapture(self.video_path)
+            if not cap.isOpened():
+                raise ValueError("Could not open video file")
+            return cap
         else:  # Image
             if not self.image_path:
                 raise ValueError("No image file selected")

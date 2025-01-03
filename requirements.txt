@@ -3,3 +3,4 @@ flask
 pillow
 websockets
 simple-websocket-server
+comtypes
