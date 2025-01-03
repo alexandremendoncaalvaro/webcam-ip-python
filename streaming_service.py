@@ -4,7 +4,7 @@ import cv2
 import logging
 from flask import Flask, Response
 import websockets
-from typing import Generator, AsyncGenerator, Optional
+from typing import Generator, AsyncGenerator
 from source_manager import VideoSource
 
 class StreamingService(ABC):
