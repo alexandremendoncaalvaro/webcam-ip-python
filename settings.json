@@ -1,7 +1,7 @@
 {
-    "source_type": "Static Image",
+    "source_type": "Webcam",
     "resolution": "640x480",
     "protocol": "WebSocket",
     "port": "5000",
-    "last_image_path": "C:\\Users\\alexa\\Downloads\\IMG_0253.jpg"
+    "selected_camera": 1
 }

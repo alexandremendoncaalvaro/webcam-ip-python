@@ -276,32 +276,94 @@ class WebcamIPGUI:
     
     def toggle_stream(self) -> None:
         """Toggle streaming state"""
-        if not self.current_service:
+        if not self.current_service or not self.current_service.is_running():
             try:
+                # Get video source
                 source = self.get_current_source()
-                if not source.open():
+                if not source.is_opened() and not source.open():
                     raise ValueError("Could not open source")
                 
-                protocol = self.protocol_combo.get()
-                self.current_service = StreamingServiceFactory.create_service(protocol, source)
+                # Set resolution
+                width, height = map(int, self.resolution_combo.get().split('x'))
+                source.set_resolution(width, height)
                 
+                # Create frame generator
+                def frame_generator():
+                    while True:
+                        ret, frame = source.read_frame()
+                        if not ret:
+                            if isinstance(source, VideoSource):
+                                source.rewind()
+                                continue
+                            break
+                        ret, buffer = cv2.imencode('.jpg', frame)
+                        if ret:
+                            yield buffer.tobytes()
+                
+                # Create and start streaming service
+                protocol = self.protocol_combo.get()
                 port = int(self.port_entry.get())
-                self.server_thread = threading.Thread(
-                    target=self.current_service.start,
-                    args=('0.0.0.0', port),
-                    daemon=True
+                
+                # Stop any existing service
+                if self.current_service:
+                    self.current_service.stop()
+                    self.current_service = None
+                
+                # Create service
+                self.current_service = StreamingServiceFactory.create_service(
+                    protocol.lower(),
+                    host="0.0.0.0",
+                    port=port
                 )
+                
+                # Update UI before starting server
+                self.stream_button.config(text="Stop Server")
+                self.update_url_label()
+                self.lock_controls(True)
+                
+                # Start service in a thread
+                def run_service():
+                    try:
+                        if not self.current_service.start(frame_generator):
+                            source.release()
+                            self.current_service = None
+                            tk.messagebox.showerror("Error", f"Could not start {protocol} server")
+                            self.stream_button.config(text="Start Server")
+                            self.lock_controls(False)
+                    except Exception as e:
+                        logging.error(f"Error in streaming thread: {str(e)}")
+                        source.release()
+                        if self.current_service:
+                            self.current_service.stop()
+                            self.current_service = None
+                        self.stream_button.config(text="Start Server")
+                        self.lock_controls(False)
+                
+                self.server_thread = threading.Thread(target=run_service, daemon=True)
                 self.server_thread.start()
                 
-                self.stream_button.config(text="Stop Server")
-                self.lock_controls(True)
-                self.update_url_label()
-                
             except Exception as e:
+                logging.error(f"Error starting stream: {str(e)}")
                 tk.messagebox.showerror("Error", str(e))
-                self.stop_streaming()
+                if self.current_service:
+                    self.current_service.stop()
+                    self.current_service = None
+                self.stream_button.config(text="Start Server")
+                self.lock_controls(False)
         else:
-            self.stop_streaming()
+            # Update UI before stopping server
+            self.stream_button.config(text="Start Server")
+            self.url_label.config(text="Stream URL: Not started")
+            self.lock_controls(False)
+            
+            # Stop the service
+            if self.current_service:
+                try:
+                    self.current_service.stop()
+                except Exception as e:
+                    logging.error(f"Error stopping service: {str(e)}")
+                finally:
+                    self.current_service = None
     
     def stop_streaming(self) -> None:
         """Stop streaming service"""
