@@ -14,6 +14,7 @@ from typing import Union, Dict, List
 import subprocess
 import re
 import psutil
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
@@ -266,6 +267,15 @@ class WebcamIPApp:
             cap = cv2.VideoCapture(self.video_path)
             if not cap.isOpened():
                 raise ValueError("Could not open video file")
+            
+            # Get video FPS
+            self.video_fps = cap.get(cv2.CAP_PROP_FPS)
+            if self.video_fps <= 0:
+                self.video_fps = 30  # Default to 30 FPS if unable to get actual FPS
+            
+            # Calculate frame delay in milliseconds
+            self.frame_delay = 1.0 / self.video_fps
+            
             return cap
         else:  # Image
             if not self.image_path:
@@ -314,21 +324,35 @@ class WebcamIPApp:
                 photo = ImageTk.PhotoImage(image=image)
                 self.preview_frame.configure(image=photo)
                 self.preview_frame.image = photo
-            self.root.after(33, self.update_preview)  # ~30 FPS
+            
+            # Use video FPS for preview if it's a video file
+            if self.source_type_combo.get() == StreamSource.VIDEO:
+                self.root.after(int(self.frame_delay * 1000), self.update_preview)
+            else:
+                self.root.after(33, self.update_preview)  # ~30 FPS for other sources
     
     def generate_frames(self):
         try:
             source = self.get_current_source()
+            last_frame_time = time.time()
+            
             if isinstance(source, str):  # Image path
                 frame = cv2.imread(source)
                 while self.stream_active:
                     ret, buffer = cv2.imencode('.jpg', frame)
                     if ret:
                         yield buffer.tobytes()
-                    else:
-                        break
+                    time.sleep(0.033)  # ~30 FPS for images
             else:  # VideoCapture
                 while self.stream_active:
+                    current_time = time.time()
+                    elapsed = current_time - last_frame_time
+                    
+                    # If video file, control playback speed
+                    if self.source_type_combo.get() == StreamSource.VIDEO:
+                        if elapsed < self.frame_delay:
+                            time.sleep(self.frame_delay - elapsed)
+                    
                     ret, frame = source.read()
                     if not ret:
                         if self.source_type_combo.get() == StreamSource.VIDEO:
@@ -339,6 +363,8 @@ class WebcamIPApp:
                     ret, buffer = cv2.imencode('.jpg', frame)
                     if ret:
                         yield buffer.tobytes()
+                    
+                    last_frame_time = time.time()
                 source.release()
         except Exception as e:
             logging.error(f"Error in generate_frames: {str(e)}")
@@ -454,15 +480,25 @@ class WebcamIPApp:
         """Async generator for video frames."""
         try:
             source = self.get_current_source()
+            last_frame_time = time.time()
+            
             if isinstance(source, str):  # Image path
                 frame = cv2.imread(source)
                 while self.stream_active:
                     ret, buffer = cv2.imencode('.jpg', frame)
                     if ret:
                         yield buffer.tobytes()
-                    await asyncio.sleep(0.033)
+                    await asyncio.sleep(0.033)  # ~30 FPS for images
             else:  # VideoCapture
                 while self.stream_active:
+                    current_time = time.time()
+                    elapsed = current_time - last_frame_time
+                    
+                    # If video file, control playback speed
+                    if self.source_type_combo.get() == StreamSource.VIDEO:
+                        if elapsed < self.frame_delay:
+                            await asyncio.sleep(self.frame_delay - elapsed)
+                    
                     ret, frame = source.read()
                     if not ret:
                         if self.source_type_combo.get() == StreamSource.VIDEO:
@@ -473,7 +509,8 @@ class WebcamIPApp:
                     ret, buffer = cv2.imencode('.jpg', frame)
                     if ret:
                         yield buffer.tobytes()
-                    await asyncio.sleep(0.033)
+                    
+                    last_frame_time = time.time()
                 source.release()
         except Exception as e:
             logging.error(f"Error in generate_frames_async: {str(e)}")
