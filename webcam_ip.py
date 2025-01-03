@@ -74,65 +74,101 @@ class WebcamIPApp:
         self.source_type_combo.bind('<<ComboboxSelected>>', self.on_source_type_changed)
         
     def create_gui(self):
+        # Configure grid weights for better responsiveness
+        self.root.grid_columnconfigure(1, weight=1)
+        
+        # Add padding to main window
+        self.root.configure(padx=15, pady=15)
+        
+        # Style configuration
+        style = ttk.Style()
+        style.configure('TCombobox', padding=5)
+        style.configure('TButton', padding=5)
+        
+        # Frame for controls
+        control_frame = ttk.Frame(self.root)
+        control_frame.grid(row=0, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        control_frame.grid_columnconfigure(1, weight=1)
+        
         current_row = 0
         
-        # Source type selection
-        tk.Label(self.root, text="Source Type:").grid(row=current_row, column=0, padx=5, pady=5)
-        self.source_type_combo = ttk.Combobox(self.root, state="readonly", values=self.source_types)
-        self.source_type_combo.grid(row=current_row, column=1, padx=5, pady=5)
+        # Source type selection with modern styling
+        ttk.Label(control_frame, text="Source Type:", padding=(0, 5)).grid(row=current_row, column=0, sticky="w")
+        self.source_type_combo = ttk.Combobox(control_frame, state="readonly", values=self.source_types, width=30)
+        self.source_type_combo.grid(row=current_row, column=1, columnspan=2, sticky="ew", padx=(5, 0), pady=5)
         self.source_type_combo.current(0)
         current_row += 1
         
         # Camera/File selection
-        tk.Label(self.root, text="Select Source:").grid(row=current_row, column=0, padx=5, pady=5)
-        self.camera_combo = ttk.Combobox(self.root, state="readonly")
-        self.camera_combo.grid(row=current_row, column=1, padx=5, pady=5)
-        self.source_button = tk.Button(self.root, text="Browse", command=self.browse_file)
-        self.source_button.grid(row=current_row, column=2, padx=5, pady=5)
+        ttk.Label(control_frame, text="Select Source:", padding=(0, 5)).grid(row=current_row, column=0, sticky="w")
+        self.camera_combo = ttk.Combobox(control_frame, state="readonly", width=30)
+        self.camera_combo.grid(row=current_row, column=1, sticky="ew", padx=(5, 0), pady=5)
+        self.source_button = ttk.Button(control_frame, text="Browse", command=self.browse_file, width=15)
+        self.source_button.grid(row=current_row, column=2, padx=(5, 0), pady=5)
         self.source_button.grid_remove()  # Initially hidden
         current_row += 1
         
         # Resolution selection
-        tk.Label(self.root, text="Resolution:").grid(row=current_row, column=0, padx=5, pady=5)
-        self.resolution_combo = ttk.Combobox(self.root, state="readonly")
-        self.resolution_combo.grid(row=current_row, column=1, padx=5, pady=5)
+        ttk.Label(control_frame, text="Resolution:", padding=(0, 5)).grid(row=current_row, column=0, sticky="w")
+        self.resolution_combo = ttk.Combobox(control_frame, state="readonly", width=30)
+        self.resolution_combo.grid(row=current_row, column=1, columnspan=2, sticky="ew", padx=(5, 0), pady=5)
         current_row += 1
         
         # Protocol selection
-        tk.Label(self.root, text="Protocol:").grid(row=current_row, column=0, padx=5, pady=5)
-        self.protocol_combo = ttk.Combobox(self.root, state="readonly", values=self.protocols)
-        self.protocol_combo.grid(row=current_row, column=1, padx=5, pady=5)
+        ttk.Label(control_frame, text="Protocol:", padding=(0, 5)).grid(row=current_row, column=0, sticky="w")
+        self.protocol_combo = ttk.Combobox(control_frame, state="readonly", values=self.protocols, width=30)
+        self.protocol_combo.grid(row=current_row, column=1, columnspan=2, sticky="ew", padx=(5, 0), pady=5)
         self.protocol_combo.current(0)
         current_row += 1
         
         # Port selection
-        tk.Label(self.root, text="Port:").grid(row=current_row, column=0, padx=5, pady=5)
-        self.port_entry = tk.Entry(self.root)
+        ttk.Label(control_frame, text="Port:", padding=(0, 5)).grid(row=current_row, column=0, sticky="w")
+        self.port_entry = ttk.Entry(control_frame, width=32)
         self.port_entry.insert(0, "5000")
-        self.port_entry.grid(row=current_row, column=1, padx=5, pady=5)
+        self.port_entry.grid(row=current_row, column=1, columnspan=2, sticky="ew", padx=(5, 0), pady=5)
         current_row += 1
         
-        # Preview frame
-        self.preview_frame = tk.Label(self.root)
-        self.preview_frame.grid(row=current_row, column=0, columnspan=3, padx=5, pady=5)
-        current_row += 1
+        # Separator
+        ttk.Separator(self.root, orient='horizontal').grid(row=1, column=0, columnspan=3, sticky="ew", pady=10)
         
-        # IP Address display
-        self.ip_label = tk.Label(self.root, text=f"Local IP: {self.get_local_ip()}")
-        self.ip_label.grid(row=current_row, column=0, columnspan=2, padx=5, pady=5)
-        current_row += 1
+        # Preview frame with border and padding
+        preview_frame_container = ttk.Frame(self.root, relief="solid", borderwidth=1)
+        preview_frame_container.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky="nsew")
+        self.preview_frame = ttk.Label(preview_frame_container)
+        self.preview_frame.grid(row=0, column=0, padx=2, pady=2)
+        
+        # Status frame
+        status_frame = ttk.Frame(self.root)
+        status_frame.grid(row=3, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        status_frame.grid_columnconfigure(0, weight=1)
+        
+        # IP Address display with modern styling
+        self.ip_label = ttk.Label(status_frame, text=f"Local IP: {self.get_local_ip()}", padding=(0, 5))
+        self.ip_label.grid(row=0, column=0, sticky="w")
         
         # Stream URL display
-        self.url_label = tk.Label(self.root, text="Stream URL: Not started")
-        self.url_label.grid(row=current_row, column=0, columnspan=2, padx=5, pady=5)
-        current_row += 1
+        self.url_label = ttk.Label(status_frame, text="Stream URL: Not started", padding=(0, 5))
+        self.url_label.grid(row=1, column=0, sticky="w")
         
-        # Control buttons
-        self.preview_button = tk.Button(self.root, text="Start Preview", command=self.toggle_preview)
-        self.preview_button.grid(row=current_row, column=0, padx=5, pady=5)
+        # Control buttons frame
+        button_frame = ttk.Frame(self.root)
+        button_frame.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5, pady=10)
+        button_frame.grid_columnconfigure(0, weight=1)
+        button_frame.grid_columnconfigure(1, weight=1)
         
-        self.stream_button = tk.Button(self.root, text="Start Server", command=self.toggle_stream)
-        self.stream_button.grid(row=current_row, column=1, padx=5, pady=5)
+        # Control buttons with modern styling
+        self.preview_button = ttk.Button(button_frame, text="Start Preview", command=self.toggle_preview, width=20)
+        self.preview_button.grid(row=0, column=0, padx=5)
+        
+        self.stream_button = ttk.Button(button_frame, text="Start Server", command=self.toggle_stream, width=20)
+        self.stream_button.grid(row=0, column=1, padx=5)
+        
+        # Configure window minimum size
+        self.root.update()
+        self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
+        
+        # Set window title with version
+        self.root.title("Webcam IP Server v2.0")
     
     def get_available_cameras(self) -> List[Dict[str, Union[int, str]]]:
         cameras = []
@@ -660,5 +696,12 @@ class WebcamIPApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
+    # Set application icon
+    try:
+        icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'icone.png')
+        icon_image = tk.PhotoImage(file=icon_path)
+        root.iconphoto(True, icon_image)
+    except Exception as e:
+        logging.warning(f"Could not load application icon: {str(e)}")
     app = WebcamIPApp(root)
     root.mainloop() 
