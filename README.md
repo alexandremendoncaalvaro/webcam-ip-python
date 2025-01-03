@@ -1,67 +1,130 @@
-# Webcam IP Server
+# Webcam IP Server v2.0.14
 
-A simple Python application that turns your webcam, video files, or static images into an IP camera stream, allowing you to access it from other devices on your network using multiple streaming protocols.
+Uma aplicação desktop para transmitir webcam, vídeos ou imagens através de HTTP ou WebSocket.
 
-## Features
+## 🌟 Funcionalidades
 
-- Multiple source types:
-  - Webcams (with device name detection)
-  - Video files (MP4, AVI, MKV)
-  - Static images (JPG, PNG)
-- Choose resolution
-- Preview feed
-- Multiple streaming protocols:
-  - HTTP (browser-friendly)
-  - WebSocket (low-latency)
-- Configure streaming port
+- 📹 Suporte para múltiplas fontes de vídeo:
+  - Webcams conectadas
+  - Arquivos de vídeo (MP4, AVI, MKV)
+  - Imagens estáticas (JPG, PNG)
+- 🔄 Protocolos de transmissão:
+  - HTTP (compatível com navegadores)
+  - WebSocket (baixa latência)
+- 🎛️ Configurações ajustáveis:
+  - Resolução de vídeo (até 1920x1080)
+  - Porta de transmissão
+  - Seleção de câmera
+- 👀 Visualização em tempo real
+- 💾 Salva configurações automaticamente
+- 🔗 URLs clicáveis para fácil acesso
+- 🖼️ Ícone personalizado
 
-## Requirements
+## 📋 Requisitos
 
-- Python 3.7+
-- Windows OS
-- Webcam (optional, only if using webcam source)
+- Python 3.8 ou superior
+- Windows 10/11
+- Webcam ou arquivos de mídia para transmitir
 
-## Installation
+## 🚀 Instalação
 
-1. Install the required packages:
+1. Clone o repositório:
+
+```bash
+git clone https://github.com/seu-usuario/webcam-ip-python.git
+cd webcam-ip-python
+```
+
+2. Crie um ambiente virtual:
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+3. Instale as dependências:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Run the application:
+## 💻 Uso
+
+1. Execute o programa:
 
 ```bash
 python webcam_ip.py
 ```
 
-## Usage
+2. Na interface:
 
-1. Launch the application
-2. Select source type:
-   - Webcam: Choose from available cameras
-   - Video File: Select a video file to stream in loop
-   - Static Image: Select an image to stream
-3. Choose desired resolution
-4. Select streaming protocol:
-   - HTTP: Best for web browsers
-   - WebSocket: Better for low-latency applications
-5. Set the port number (default: 5000)
-6. Click "Start Preview" to see the feed
-7. Click "Start Server" to begin streaming
+   - Selecione o tipo de fonte (Webcam, Vídeo ou Imagem)
+   - Escolha a resolução desejada
+   - Selecione o protocolo (HTTP ou WebSocket)
+   - Configure a porta (padrão: 5000)
+   - Clique em "Start Preview" para visualizar
+   - Clique em "Start Server" para iniciar a transmissão
 
-### Accessing the Stream
+3. Acesse o stream:
+   - HTTP: Clique no link ou acesse `http://seu-ip:porta`
+   - WebSocket: Clique no link para abrir o cliente de exemplo
 
-Depending on the selected protocol, use one of these URLs:
+## 🔧 Configurações
 
-- HTTP: `http://<IP_ADDRESS>:<PORT>`
+- As configurações são salvas automaticamente em `settings.json`
+- Configurações salvas:
+  - Tipo de fonte
+  - Câmera selecionada
+  - Resolução
+  - Protocolo
+  - Porta
+  - Último arquivo de vídeo/imagem usado
 
-  - Example: `http://192.168.1.100:5000`
-  - Open in any web browser
+## 🌐 Protocolos
 
-- WebSocket: `ws://<IP_ADDRESS>:<PORT>`
+### HTTP
 
-  - Example: `ws://192.168.1.100:5000`
-  - Use with WebSocket-compatible clients
+- Compatível com qualquer navegador
+- Maior compatibilidade
+- Latência média
 
-The application will display the correct URL format based on your selected protocol.
+### WebSocket
+
+- Menor latência
+- Requer cliente WebSocket
+- Cliente de exemplo incluído
+
+## 📝 Notas
+
+- Para câmeras USB, conecte antes de iniciar o programa
+- A porta selecionada deve estar disponível
+- Firewall pode precisar de liberação para acesso externo
+- Em caso de erro, verifique se a porta não está em uso
+
+## 🐛 Problemas Conhecidos
+
+- Algumas webcams podem não ser detectadas corretamente
+- Pode haver atraso em redes congestionadas
+- Resolução máxima limitada pelo hardware
+
+## 🔄 Atualizações na v2.0.14
+
+- Corrigido problema com serviço WebSocket
+- Melhorado gerenciamento de recursos
+- Interface mais responsiva
+- Salvamento automático de configurações
+- URLs clicáveis para fácil acesso
+- Suporte a múltiplas câmeras
+- Melhor tratamento de erros
+
+## 🤝 Contribuindo
+
+1. Faça um Fork
+2. Crie uma branch (`git checkout -b feature/sua-feature`)
+3. Commit suas mudanças (`git commit -m 'Adiciona feature'`)
+4. Push para a branch (`git push origin feature/sua-feature`)
+5. Abra um Pull Request
+
+## 📄 Licença
+
+Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
