@@ -84,7 +84,7 @@ class WebcamIPGUI:
     
     def setup_window(self) -> None:
         """Setup main window properties"""
-        self.root.title("Webcam IP Server v2.0")
+        self.root.title("Webcam IP Server v2.0.14")
         self.root.configure(padx=15, pady=15)
         self.root.grid_columnconfigure(1, weight=1)
         
