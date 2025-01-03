@@ -1,5 +1,9 @@
 # Webcam IP Server v2.0.14
 
+<p align="center">
+  <img src="assets/icone.png" alt="Webcam IP Server" height="128">
+</p>
+
 Uma aplicação desktop para transmitir webcam, vídeos ou imagens através de HTTP ou WebSocket.
 
 ## 🌟 Funcionalidades
@@ -18,7 +22,6 @@ Uma aplicação desktop para transmitir webcam, vídeos ou imagens através de H
 - 👀 Visualização em tempo real
 - 💾 Salva configurações automaticamente
 - 🔗 URLs clicáveis para fácil acesso
-- 🖼️ Ícone personalizado
 
 ## 📋 Requisitos
 
