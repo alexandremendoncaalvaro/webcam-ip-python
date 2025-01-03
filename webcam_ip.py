@@ -146,9 +146,10 @@ class WebcamIPApp:
         self.ip_label = ttk.Label(status_frame, text=f"Local IP: {self.get_local_ip()}", padding=(0, 5))
         self.ip_label.grid(row=0, column=0, sticky="w")
         
-        # Stream URL display
-        self.url_label = ttk.Label(status_frame, text="Stream URL: Not started", padding=(0, 5))
+        # Stream URL display with clickable link
+        self.url_label = ttk.Label(status_frame, text="Stream URL: Not started", padding=(0, 5), cursor="hand2", foreground="blue")
         self.url_label.grid(row=1, column=0, sticky="w")
+        self.url_label.bind("<Button-1>", self.open_stream_url)
         
         # Control buttons frame
         button_frame = ttk.Frame(self.root)
@@ -608,6 +609,30 @@ class WebcamIPApp:
         except:
             return "127.0.0.1"
     
+    def open_stream_url(self, event=None):
+        """Open the stream URL in the default browser or client example."""
+        if not self.stream_active:
+            return
+            
+        protocol = self.protocol_combo.get()
+        ip = self.get_local_ip()
+        port = self.port_entry.get()
+        
+        if protocol == "HTTP":
+            url = f"http://{ip}:{port}"
+            import webbrowser
+            webbrowser.open(url)
+        else:  # WebSocket
+            # Open the example client HTML
+            example_path = os.path.join(os.path.dirname(__file__), 'client-html-example', 'index.html')
+            if os.path.exists(example_path):
+                import webbrowser
+                webbrowser.open(f"file://{example_path}")
+            else:
+                tk.messagebox.showwarning("Cliente WebSocket", 
+                    "O arquivo de exemplo do cliente WebSocket não foi encontrado.\n"
+                    f"URL do WebSocket: ws://{ip}:{port}")
+                    
     def toggle_stream(self):
         if not self.stream_active:
             try:
@@ -636,12 +661,14 @@ class WebcamIPApp:
                 if protocol == "HTTP":
                     self.server_thread = threading.Thread(target=self.run_http_server, daemon=True)
                     self.server_thread.start()
-                    self.url_label.config(text=f"Stream URL: http://{ip}:{port}/video_feed")
+                    url_text = f"Stream URL: http://{ip}:{port} (Clique para abrir)"
+                    self.url_label.config(text=url_text, foreground="blue", cursor="hand2")
                 
                 elif protocol == "WebSocket":
                     self.server_thread = threading.Thread(target=self.run_websocket_server, daemon=True)
                     self.server_thread.start()
-                    self.url_label.config(text=f"Stream URL: ws://{ip}:{port}")
+                    url_text = f"Stream URL: ws://{ip}:{port} (Clique para abrir exemplo)"
+                    self.url_label.config(text=url_text, foreground="blue", cursor="hand2")
                     
                     # Create an example HTML file for WebSocket client
                     example_html = f"""
@@ -649,36 +676,86 @@ class WebcamIPApp:
 <html>
 <head>
     <title>WebSocket Camera Stream</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }}
+        h2 {{
+            color: #333;
+        }}
+        #videoCanvas {{
+            border: 2px solid #333;
+            background-color: #fff;
+            max-width: 100%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        .container {{
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }}
+        .status {{
+            margin-top: 10px;
+            color: #666;
+        }}
+    </style>
 </head>
 <body>
-    <h2>Camera Stream</h2>
-    <canvas id="videoCanvas"></canvas>
+    <div class="container">
+        <h2>Camera Stream</h2>
+        <canvas id="videoCanvas"></canvas>
+        <div class="status" id="status">Conectando...</div>
+    </div>
     <script>
         const canvas = document.getElementById('videoCanvas');
         const ctx = canvas.getContext('2d');
-        const ws = new WebSocket('ws://{ip}:{port}');
+        const status = document.getElementById('status');
+        let ws = null;
         
-        ws.onmessage = function(event) {{
-            const reader = new FileReader();
-            reader.onload = function() {{
-                const img = new Image();
-                img.onload = function() {{
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    ctx.drawImage(img, 0, 0);
-                }};
-                img.src = reader.result;
+        function connect() {{
+            ws = new WebSocket('ws://{ip}:{port}');
+            
+            ws.onopen = function() {{
+                status.textContent = 'Conectado';
+                status.style.color = 'green';
             }};
-            reader.readAsDataURL(event.data);
-        }};
+            
+            ws.onmessage = function(event) {{
+                const reader = new FileReader();
+                reader.onload = function() {{
+                    const img = new Image();
+                    img.onload = function() {{
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        ctx.drawImage(img, 0, 0);
+                    }};
+                    img.src = reader.result;
+                }};
+                reader.readAsDataURL(event.data);
+            }};
+            
+            ws.onclose = function() {{
+                status.textContent = 'Desconectado - Tentando reconectar...';
+                status.style.color = 'red';
+                setTimeout(connect, 3000);
+            }};
+            
+            ws.onerror = function(err) {{
+                status.textContent = 'Erro na conexão';
+                status.style.color = 'red';
+            }};
+        }}
+        
+        connect();
     </script>
 </body>
 </html>
 """
                     os.makedirs('client-html-example', exist_ok=True)
-                    with open('client-html-example/index.html', 'w') as f:
+                    with open('client-html-example/index.html', 'w', encoding='utf-8') as f:
                         f.write(example_html)
-                    self.url_label.config(text=f"Stream URL: ws://{ip}:{port}\nExample client: client-html-example/index.html")
             
             except Exception as e:
                 tk.messagebox.showerror("Error", str(e))

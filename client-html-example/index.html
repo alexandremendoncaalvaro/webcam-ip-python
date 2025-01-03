@@ -3,28 +3,79 @@
 <html>
 <head>
     <title>WebSocket Camera Stream</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        h2 {
+            color: #333;
+        }
+        #videoCanvas {
+            border: 2px solid #333;
+            background-color: #fff;
+            max-width: 100%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .status {
+            margin-top: 10px;
+            color: #666;
+        }
+    </style>
 </head>
 <body>
-    <h2>Camera Stream</h2>
-    <canvas id="videoCanvas"></canvas>
+    <div class="container">
+        <h2>Camera Stream</h2>
+        <canvas id="videoCanvas"></canvas>
+        <div class="status" id="status">Conectando...</div>
+    </div>
     <script>
         const canvas = document.getElementById('videoCanvas');
         const ctx = canvas.getContext('2d');
-        const ws = new WebSocket('ws://192.168.68.125:5000');
+        const status = document.getElementById('status');
+        let ws = null;
         
-        ws.onmessage = function(event) {
-            const reader = new FileReader();
-            reader.onload = function() {
-                const img = new Image();
-                img.onload = function() {
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    ctx.drawImage(img, 0, 0);
-                };
-                img.src = reader.result;
+        function connect() {
+            ws = new WebSocket('ws://192.168.68.125:5000');
+            
+            ws.onopen = function() {
+                status.textContent = 'Conectado';
+                status.style.color = 'green';
             };
-            reader.readAsDataURL(event.data);
-        };
+            
+            ws.onmessage = function(event) {
+                const reader = new FileReader();
+                reader.onload = function() {
+                    const img = new Image();
+                    img.onload = function() {
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        ctx.drawImage(img, 0, 0);
+                    };
+                    img.src = reader.result;
+                };
+                reader.readAsDataURL(event.data);
+            };
+            
+            ws.onclose = function() {
+                status.textContent = 'Desconectado - Tentando reconectar...';
+                status.style.color = 'red';
+                setTimeout(connect, 3000);
+            };
+            
+            ws.onerror = function(err) {
+                status.textContent = 'Erro na conexão';
+                status.style.color = 'red';
+            };
+        }
+        
+        connect();
     </script>
 </body>
 </html>
