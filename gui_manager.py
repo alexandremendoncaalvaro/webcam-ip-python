@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 import cv2
 import os
@@ -7,6 +7,7 @@ import logging
 from typing import Optional
 from source_manager import VideoSource, SourceFactory
 from streaming_service import StreamingService, StreamingServiceFactory
+from config_manager import ConfigManager
 import threading
 import webbrowser
 
@@ -54,6 +55,7 @@ class WebcamIPGUI:
     
     def __init__(self, root: tk.Tk):
         self.root = root
+        self.config_manager = ConfigManager()
         self.setup_window()
         
         # Initialize managers
@@ -61,14 +63,24 @@ class WebcamIPGUI:
         self.current_service: Optional[StreamingService] = None
         self.server_thread: Optional[threading.Thread] = None
         
+        # Get available cameras first
+        self.available_cameras = SourceFactory.get_available_cameras()
+        logging.info(f"Found cameras: {[info['name'] for info in self.available_cameras]}")
+        
         # Create GUI elements
         self.create_gui()
         
         # Initialize preview manager with created preview frame
         self.preview_manager = PreviewManager(self.preview_frame)
         
-        # Load available cameras
+        # Load cameras into combo box
         self.load_cameras()
+        
+        # Now load saved settings
+        self.load_settings()
+        
+        # Setup settings auto-save
+        self.setup_auto_save()
     
     def setup_window(self) -> None:
         """Setup main window properties"""
@@ -100,44 +112,52 @@ class WebcamIPGUI:
         self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
     
     def create_control_frame(self) -> None:
-        """Create the control panel frame"""
+        """Create the control frame with all input elements"""
+        # Frame for controls
         control_frame = ttk.Frame(self.root)
         control_frame.grid(row=0, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
         control_frame.grid_columnconfigure(1, weight=1)
         
+        current_row = 0
+        
         # Source type selection
-        ttk.Label(control_frame, text="Source Type:", padding=(0, 5)).grid(row=0, column=0, sticky="w")
+        ttk.Label(control_frame, text="Source Type:", padding=(0, 5)).grid(row=current_row, column=0, sticky="w")
         self.source_type_combo = ttk.Combobox(control_frame, state="readonly", values=["Webcam", "Video File", "Static Image"], width=30)
-        self.source_type_combo.grid(row=0, column=1, columnspan=2, sticky="ew", padx=(5, 0), pady=5)
+        self.source_type_combo.grid(row=current_row, column=1, columnspan=2, sticky="ew", padx=(5, 0), pady=5)
         self.source_type_combo.current(0)
         self.source_type_combo.bind('<<ComboboxSelected>>', self.on_source_type_changed)
+        current_row += 1
         
         # Camera/File selection
-        ttk.Label(control_frame, text="Select Source:", padding=(0, 5)).grid(row=1, column=0, sticky="w")
+        ttk.Label(control_frame, text="Select Source:", padding=(0, 5)).grid(row=current_row, column=0, sticky="w")
         self.camera_combo = ttk.Combobox(control_frame, state="readonly", width=30)
-        self.camera_combo.grid(row=1, column=1, sticky="ew", padx=(5, 0), pady=5)
+        self.camera_combo.grid(row=current_row, column=1, sticky="ew", padx=(5, 0), pady=5)
         
         self.source_button = ttk.Button(control_frame, text="Browse", command=self.browse_file, width=15)
-        self.source_button.grid(row=1, column=2, padx=(5, 0), pady=5)
-        self.source_button.grid_remove()
+        self.source_button.grid(row=current_row, column=2, padx=(5, 0), pady=5)
+        self.source_button.grid_remove()  # Initially hidden
+        current_row += 1
         
         # Resolution selection
-        ttk.Label(control_frame, text="Resolution:", padding=(0, 5)).grid(row=2, column=0, sticky="w")
+        ttk.Label(control_frame, text="Resolution:", padding=(0, 5)).grid(row=current_row, column=0, sticky="w")
         self.resolution_combo = ttk.Combobox(control_frame, state="readonly", values=['640x480', '800x600', '1280x720', '1920x1080'], width=30)
-        self.resolution_combo.grid(row=2, column=1, columnspan=2, sticky="ew", padx=(5, 0), pady=5)
+        self.resolution_combo.grid(row=current_row, column=1, columnspan=2, sticky="ew", padx=(5, 0), pady=5)
         self.resolution_combo.current(0)
+        current_row += 1
         
         # Protocol selection
-        ttk.Label(control_frame, text="Protocol:", padding=(0, 5)).grid(row=3, column=0, sticky="w")
+        ttk.Label(control_frame, text="Protocol:", padding=(0, 5)).grid(row=current_row, column=0, sticky="w")
         self.protocol_combo = ttk.Combobox(control_frame, state="readonly", values=['HTTP', 'WebSocket'], width=30)
-        self.protocol_combo.grid(row=3, column=1, columnspan=2, sticky="ew", padx=(5, 0), pady=5)
+        self.protocol_combo.grid(row=current_row, column=1, columnspan=2, sticky="ew", padx=(5, 0), pady=5)
         self.protocol_combo.current(0)
+        current_row += 1
         
         # Port selection
-        ttk.Label(control_frame, text="Port:", padding=(0, 5)).grid(row=4, column=0, sticky="w")
+        ttk.Label(control_frame, text="Port:", padding=(0, 5)).grid(row=current_row, column=0, sticky="w")
         self.port_entry = ttk.Entry(control_frame, width=32)
         self.port_entry.insert(0, "5000")
-        self.port_entry.grid(row=4, column=1, columnspan=2, sticky="ew", padx=(5, 0), pady=5)
+        self.port_entry.grid(row=current_row, column=1, columnspan=2, sticky="ew", padx=(5, 0), pady=5)
+        current_row += 1
     
     def create_preview_frame(self) -> None:
         """Create the preview frame"""
@@ -175,35 +195,20 @@ class WebcamIPGUI:
         self.stream_button.grid(row=0, column=1, padx=5)
     
     def load_cameras(self) -> None:
-        """Load available cameras"""
+        """Load available cameras into combo box"""
         try:
-            import subprocess
-            cmd = '''
-            Get-PnpDevice -Class 'Image' -Status 'OK' | 
-            Where-Object { $_.FriendlyName -match 'camera|webcam|ivCam' } | 
-            Select-Object FriendlyName |
-            Format-List
-            '''
-            result = subprocess.run(['powershell', '-Command', cmd], capture_output=True, text=True)
-            
-            camera_names = []
-            for line in result.stdout.split('\n'):
-                line = line.strip()
-                if line.startswith('FriendlyName'):
-                    name = line.split(':', 1)[1].strip()
-                    if name and not name.lower().startswith('microsoft'):
-                        camera_names.append(name)
-            
-            if camera_names:
-                self.camera_combo['values'] = camera_names
+            # Use the already loaded cameras
+            camera_names = [info['name'] for info in self.available_cameras]
+            self.camera_combo['values'] = camera_names
+            if self.available_cameras:
                 self.camera_combo.current(0)
-            else:
-                self.camera_combo['values'] = ["No cameras found"]
-                self.camera_combo.current(0)
-                
+                logging.info(f"Loaded cameras into combo box: {camera_names}")
+                logging.info(f"Selected camera index: {self.camera_combo.current()}")
         except Exception as e:
-            logging.error(f"Error loading cameras: {str(e)}")
-            self.camera_combo['values'] = ["Error loading cameras"]
+            logging.error(f"Error loading cameras into combo box: {str(e)}")
+            # Add a dummy entry if no cameras are found
+            self.available_cameras = [{"index": 0, "name": "No cameras found"}]
+            self.camera_combo['values'] = ["No cameras found"]
             self.camera_combo.current(0)
     
     def on_source_type_changed(self, event=None) -> None:
@@ -226,12 +231,14 @@ class WebcamIPGUI:
             if path:
                 self.source_button.configure(text=os.path.basename(path))
                 self.source_button.path = path
+                self.save_settings()  # Save settings after selecting file
         else:  # Image
             filetypes = [("Image files", "*.jpg *.jpeg *.png"), ("All files", "*.*")]
             path = filedialog.askopenfilename(filetypes=filetypes)
             if path:
                 self.source_button.configure(text=os.path.basename(path))
                 self.source_button.path = path
+                self.save_settings()  # Save settings after selecting file
     
     def get_current_source(self) -> VideoSource:
         """Get the current video source based on UI selection"""
@@ -453,3 +460,112 @@ class WebcamIPGUI:
             return ip
         except:
             return "127.0.0.1" 
+    
+    def setup_auto_save(self) -> None:
+        """Setup auto-save triggers for settings"""
+        # Bind to ComboboxSelected event
+        self.source_type_combo.bind('<<ComboboxSelected>>', lambda e: (self.on_source_type_changed(), self.save_settings()))
+        self.camera_combo.bind('<<ComboboxSelected>>', lambda e: self.save_settings())
+        self.resolution_combo.bind('<<ComboboxSelected>>', lambda e: self.save_settings())
+        self.protocol_combo.bind('<<ComboboxSelected>>', lambda e: self.save_settings())
+        
+        # Bind to key events for port entry
+        self.port_entry.bind('<FocusOut>', lambda e: self.save_settings())
+        self.port_entry.bind('<Return>', lambda e: self.save_settings())
+        
+        # Save settings when window is closed
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+    
+    def on_closing(self) -> None:
+        """Handle window closing event"""
+        self.save_settings()
+        self.root.destroy()
+    
+    def load_settings(self) -> None:
+        """Load saved settings"""
+        try:
+            settings = self.config_manager.load_settings()
+            logging.info("Loading settings: %s", settings)
+            
+            # Apply settings in correct order
+            if settings.get('resolution'):
+                self.resolution_combo.set(settings['resolution'])
+            
+            if settings.get('protocol'):
+                self.protocol_combo.set(settings['protocol'])
+            
+            if settings.get('port'):
+                self.port_entry.delete(0, tk.END)
+                self.port_entry.insert(0, settings['port'])
+            
+            # Load source type and related settings last
+            if settings.get('source_type'):
+                self.source_type_combo.set(settings['source_type'])
+                self.on_source_type_changed()
+                
+                # Set selected camera if in webcam mode
+                if settings['source_type'] == "Webcam" and settings.get('selected_camera') is not None:
+                    selected_camera = settings['selected_camera']
+                    if 0 <= selected_camera < len(self.camera_combo['values']):
+                        self.camera_combo.current(selected_camera)
+                        logging.info(f"Restored selected camera index: {selected_camera}")
+                
+                # Load file paths if they exist
+                if settings.get('last_video_path') and os.path.exists(settings['last_video_path']):
+                    self.source_button.path = settings['last_video_path']
+                    self.source_button.configure(text=os.path.basename(settings['last_video_path']))
+                
+                if settings.get('last_image_path') and os.path.exists(settings['last_image_path']):
+                    self.source_button.path = settings['last_image_path']
+                    self.source_button.configure(text=os.path.basename(settings['last_image_path']))
+                
+        except Exception as e:
+            logging.error(f"Error loading settings: {str(e)}")
+    
+    def save_settings(self, event=None) -> None:
+        """Save current settings"""
+        try:
+            # Get current values from GUI
+            source_type = self.source_type_combo.get()
+            resolution = self.resolution_combo.get()
+            protocol = self.protocol_combo.get()
+            port = self.port_entry.get()
+            
+            # Create settings dictionary
+            settings = {
+                'source_type': source_type,
+                'resolution': resolution,
+                'protocol': protocol,
+                'port': port
+            }
+            
+            # Save selected camera index if in webcam mode
+            if source_type == "Webcam":
+                current_index = self.camera_combo.current()
+                if current_index >= 0:
+                    settings['selected_camera'] = current_index
+                    logging.info(f"Saving selected camera index: {current_index}")
+            
+            # Add file paths if they exist
+            if hasattr(self.source_button, 'path'):
+                if source_type == "Video File":
+                    settings['last_video_path'] = os.path.abspath(self.source_button.path)
+                elif source_type == "Static Image":
+                    settings['last_image_path'] = os.path.abspath(self.source_button.path)
+            
+            # Log current settings before saving
+            logging.info("Current GUI state:")
+            logging.info(f"  Source Type: {source_type}")
+            logging.info(f"  Resolution: {resolution}")
+            logging.info(f"  Protocol: {protocol}")
+            logging.info(f"  Port: {port}")
+            
+            # Save settings
+            if self.config_manager.save_settings(settings):
+                logging.info("Settings saved successfully")
+            else:
+                logging.error("Failed to save settings")
+            
+        except Exception as e:
+            logging.error(f"Error in save_settings: {str(e)}")
+            tk.messagebox.showerror("Error", f"Could not save settings: {str(e)}") 

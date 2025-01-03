@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 import cv2
 import logging
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List, Dict, Union
 import time
+import subprocess
 
 class VideoSource(ABC):
     """Abstract base class for video sources"""
@@ -144,15 +145,93 @@ class ImageSource(VideoSource):
         return self.image is not None
 
 class SourceFactory:
-    """Factory for creating video sources"""
+    """Factory class for creating video sources"""
     
     @staticmethod
     def create_source(source_type: str, **kwargs) -> VideoSource:
+        """Create a video source based on type"""
         if source_type == "webcam":
-            return WebcamSource(kwargs.get("device_index", 0))
+            return WebcamSource(**kwargs)
         elif source_type == "video":
-            return VideoFileSource(kwargs.get("file_path"))
+            return VideoFileSource(**kwargs)
         elif source_type == "image":
-            return ImageSource(kwargs.get("file_path"))
+            return ImageSource(**kwargs)
         else:
-            raise ValueError(f"Unknown source type: {source_type}") 
+            raise ValueError(f"Unknown source type: {source_type}")
+    
+    @staticmethod
+    def get_available_cameras() -> List[Dict[str, Union[int, str]]]:
+        """Get list of available cameras"""
+        cameras = []
+        try:
+            # Get camera names using PowerShell
+            cmd = '''
+            Get-PnpDevice -Class 'Image' -Status 'OK' | 
+            Where-Object { $_.FriendlyName -match 'camera|webcam|ivCam' } | 
+            Select-Object FriendlyName |
+            Format-List
+            '''
+            result = subprocess.run(['powershell', '-Command', cmd], capture_output=True, text=True)
+            
+            # Parse PowerShell output to get camera names
+            camera_names = []
+            for line in result.stdout.split('\n'):
+                line = line.strip()
+                if line.startswith('FriendlyName'):
+                    name = line.split(':', 1)[1].strip()
+                    if name and not name.lower().startswith('microsoft'):  # Filter out virtual cameras
+                        camera_names.append(name)
+            
+            logging.info(f"Found camera names from Windows: {camera_names}")
+            
+            # Try each index for real cameras
+            test_indices = [0, 1, 2]  # Test first 3 indices
+            found_cameras = []  # Temporary list to store found cameras
+            
+            for idx in test_indices:
+                try:
+                    cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+                    if cap.isOpened():
+                        # Read one frame to ensure camera is working
+                        ret, _ = cap.read()
+                        if ret:
+                            # Get camera properties
+                            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                            
+                            # Store camera info with index
+                            found_cameras.append({
+                                "index": idx,
+                                "width": width,
+                                "height": height
+                            })
+                            
+                            # Log successful camera detection
+                            logging.info(f"Successfully opened camera at index {idx}")
+                        
+                        cap.release()
+                    
+                except Exception as e:
+                    logging.debug(f"Error checking camera {idx}: {str(e)}")
+                    continue
+            
+            # Match found cameras with names in correct order
+            for i, name in enumerate(camera_names):
+                if i < len(found_cameras):
+                    camera_info = found_cameras[i]
+                    name = f"{name} ({camera_info['width']}x{camera_info['height']})"
+                    cameras.append({"index": camera_info['index'], "name": name})
+            
+            logging.info(f"Found cameras at indices: {[c['index'] for c in cameras]}")
+        
+        except Exception as e:
+            logging.error(f"Error enumerating cameras: {str(e)}")
+        
+        if not cameras:
+            # If no cameras were found, add a dummy entry
+            cameras.append({"index": 0, "name": "No cameras found"})
+            logging.warning("No cameras were detected")
+        else:
+            logging.info(f"Final camera list: {[c['name'] for c in cameras]}")
+        
+        return cameras 
