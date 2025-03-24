@@ -4,6 +4,7 @@ import logging
 from typing import Tuple, Optional, List, Dict, Union
 import time
 import subprocess
+import threading
 
 class VideoSource(ABC):
     """Abstract base class for video sources"""
@@ -71,16 +72,21 @@ class VideoFileSource(VideoSource):
         self.fps = 30
         self.frame_delay = 1.0 / self.fps
         self.last_frame_time = 0
+        self._lock = threading.Lock()  # Adiciona lock para thread safety
+        logging.info(f"VideoFileSource initialized for {file_path}")
         
     def open(self) -> bool:
         try:
+            logging.info(f"Opening video file: {self.file_path}")
             self.capture = cv2.VideoCapture(self.file_path)
             if self.capture.isOpened():
                 self.fps = self.capture.get(cv2.CAP_PROP_FPS)
                 if self.fps <= 0:
                     self.fps = 30
                 self.frame_delay = 1.0 / self.fps
+                logging.info(f"Video file opened successfully. FPS: {self.fps}")
                 return True
+            logging.error("Failed to open video file")
             return False
         except Exception as e:
             logging.error(f"Error opening video file: {str(e)}")
@@ -88,28 +94,38 @@ class VideoFileSource(VideoSource):
     
     def read_frame(self) -> Tuple[bool, Optional[cv2.Mat]]:
         if not self.is_opened():
+            logging.warning("Attempted to read frame from closed video source")
             return False, None
             
-        current_time = time.time()
-        elapsed = current_time - self.last_frame_time
-        
-        if elapsed < self.frame_delay:
-            time.sleep(self.frame_delay - elapsed)
-        
-        ret, frame = self.capture.read()
-        if not ret:
-            self.capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            ret, frame = self.capture.read()
-            
-        self.last_frame_time = time.time()
-        return ret, frame
+        with self._lock:  # Protege o acesso ao capture
+            try:
+                current_time = time.time()
+                elapsed = current_time - self.last_frame_time
+                
+                if elapsed < self.frame_delay:
+                    time.sleep(self.frame_delay - elapsed)
+                
+                ret, frame = self.capture.read()
+                if not ret:
+                    logging.info("End of video reached, rewinding")
+                    self.capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, frame = self.capture.read()
+                    
+                self.last_frame_time = time.time()
+                if ret:
+                    logging.debug(f"Frame read successfully. Frame time: {self.last_frame_time}")
+                return ret, frame
+            except Exception as e:
+                logging.error(f"Error reading frame: {str(e)}")
+                return False, None
     
     def set_resolution(self, width: int, height: int) -> None:
         # Video files maintain their original resolution
-        pass
+        logging.info(f"Resolution set to {width}x{height} (ignored for video files)")
     
     def release(self) -> None:
         if self.capture:
+            logging.info("Releasing video capture")
             self.capture.release()
             self.capture = None
     

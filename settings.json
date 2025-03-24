@@ -1,7 +1,7 @@
 {
-    "source_type": "Webcam",
+    "source_type": "Video File",
     "resolution": "640x480",
-    "protocol": "WebSocket",
+    "protocol": "HTTP",
     "port": "5000",
-    "selected_camera": 1
+    "last_video_path": "A:\\AmbevTech\\SodaVision\\area_restrita.mp4"
 }

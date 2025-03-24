@@ -7,6 +7,7 @@ import websockets
 from typing import Generator, AsyncGenerator
 from source_manager import VideoSource
 import time
+import threading
 
 class StreamingService(ABC):
     """Abstract base class for streaming services"""
@@ -352,6 +353,9 @@ class HTTPService(StreamingService):
         self.flask_app = None
         self.http_server = None
         self.port = None
+        self.active_connections = 0
+        self._lock = threading.Lock()
+        logging.info("HTTPService initialized")
     
     def start(self, frame_generator) -> bool:
         if self._is_running:
@@ -363,6 +367,7 @@ class HTTPService(StreamingService):
             
             @self.flask_app.route('/')
             def index():
+                logging.info("New client connected to root")
                 return """
                 <html>
                   <body>
@@ -373,10 +378,26 @@ class HTTPService(StreamingService):
             
             @self.flask_app.route('/video_feed')
             def video_feed():
+                with self._lock:
+                    self.active_connections += 1
+                    logging.info(f"New video feed connection. Total connections: {self.active_connections}")
+                
+                def generate():
+                    try:
+                        for frame in frame_generator():
+                            if not self._is_running:
+                                break
+                            yield (b'--frame\r\n'
+                                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                    except Exception as e:
+                        logging.error(f"Error in video feed generator: {str(e)}")
+                    finally:
+                        with self._lock:
+                            self.active_connections -= 1
+                            logging.info(f"Video feed connection closed. Total connections: {self.active_connections}")
+                
                 return Response(
-                    (b'--frame\r\n'
-                     b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
-                     for frame in frame_generator()),
+                    generate(),
                     mimetype='multipart/x-mixed-replace; boundary=frame'
                 )
             
