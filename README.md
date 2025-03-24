@@ -1,4 +1,4 @@
-# Webcam IP Server v2.0.14
+# Webcam IP Server v2.0.15
 
 <p align="center">
   <img src="assets/icone.png" alt="Webcam IP Server" height="128">
@@ -22,6 +22,8 @@ Uma aplicação desktop para transmitir webcam, vídeos ou imagens através de H
 - 👀 Visualização em tempo real
 - 💾 Salva configurações automaticamente
 - 🔗 URLs clicáveis para fácil acesso
+- 🛡️ Tratamento robusto de erros
+- 🧹 Limpeza automática de recursos
 
 ## 📋 Requisitos
 
@@ -41,7 +43,7 @@ Uma aplicação desktop para transmitir webcam, vídeos ou imagens através de H
 ### Método 1: Executável (Recomendado)
 
 1. Acesse a [página de releases](https://github.com/alexandremendoncaalvaro/webcam-ip-python/releases)
-2. Baixe a versão mais recente do `Webcam_IP_Server_v.2.0.14_Win.zip`
+2. Baixe a versão mais recente do `Webcam_IP_Server_v.2.0.15_Win.zip`
 3. Execute o arquivo baixado
    - Não é necessário instalação
    - Não requer Python ou outras dependências
@@ -128,17 +130,17 @@ pip install -r requirements.txt
 - Algumas webcams podem não ser detectadas corretamente
 - Pode haver atraso em redes congestionadas
 - Resolução máxima limitada pelo hardware
+- Alguns logs de erro relacionados à câmera virtual da NVIDIA podem aparecer, mas não afetam o funcionamento
+- O streaming de arquivos de vídeo pode ter um pequeno delay inicial
 
-## 🔄 Atualizações na v2.0.14
+## 🔄 Atualizações na v2.0.15
 
-- Corrigido problema com serviço WebSocket
-- Melhorado gerenciamento de recursos
-- Interface mais responsiva
-- Salvamento automático de configurações
-- URLs clicáveis para fácil acesso
-- Suporte a múltiplas câmeras
-- Melhor tratamento de erros
-- Disponibilização de executável para fácil instalação
+- Tratamento robusto de erros do FFmpeg
+- Mecanismo de retry para erros de streaming
+- Limpeza automática de recursos
+- Melhor gerenciamento de conexões
+- Logs mais detalhados para diagnóstico
+- Correções de bugs e melhorias de estabilidade
 
 ## 📦 Releases
 

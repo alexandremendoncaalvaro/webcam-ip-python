@@ -355,6 +355,8 @@ class HTTPService(StreamingService):
         self.port = None
         self.active_connections = 0
         self._lock = threading.Lock()
+        self._cleanup_event = threading.Event()
+        self._server_thread = None
         logging.info("HTTPService initialized")
     
     def start(self, frame_generator) -> bool:
@@ -385,7 +387,7 @@ class HTTPService(StreamingService):
                 def generate():
                     try:
                         for frame in frame_generator():
-                            if not self._is_running:
+                            if not self._is_running or self._cleanup_event.is_set():
                                 break
                             yield (b'--frame\r\n'
                                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
@@ -416,37 +418,57 @@ class HTTPService(StreamingService):
             
             logging.info(f"HTTP server starting on port {self.port}")
             self._is_running = True
-            self.http_server.serve_forever()
+            self._cleanup_event.clear()
+            
+            # Run server in a separate thread
+            def run_server():
+                try:
+                    self.http_server.serve_forever()
+                except Exception as e:
+                    logging.error(f"Error in server thread: {str(e)}")
+                finally:
+                    self._cleanup()
+            
+            self._server_thread = threading.Thread(target=run_server)
+            self._server_thread.daemon = True
+            self._server_thread.start()
+            
             return True
             
         except Exception as e:
             logging.error(f"HTTP server error: {str(e)}")
-            self._is_running = False
-            if self.http_server:
-                try:
-                    self.http_server.shutdown()
-                    self.http_server.server_close()
-                except:
-                    pass
-                self.http_server = None
+            self._cleanup()
             return False
     
-    def stop(self) -> None:
-        """Stop the HTTP server"""
-        if not self._is_running:
-            logging.warning("HTTP server is not running")
-            return
-            
+    def _cleanup(self) -> None:
+        """Internal cleanup method"""
         try:
-            if self.http_server:
-                logging.info("Shutting down HTTP server...")
-                self.http_server.shutdown()
-                self.http_server.server_close()
-                self.http_server = None
+            logging.info("Starting cleanup process...")
             
+            # Signal cleanup to all connections
+            self._cleanup_event.set()
+            
+            # Wait for active connections to close
+            with self._lock:
+                if self.active_connections > 0:
+                    logging.info(f"Waiting for {self.active_connections} active connections to close...")
+                    time.sleep(1)  # Give connections time to close
+            
+            # Shutdown server
+            if self.http_server:
+                try:
+                    logging.info("Shutting down HTTP server...")
+                    self.http_server.shutdown()
+                    self.http_server.server_close()
+                except Exception as e:
+                    logging.error(f"Error during server shutdown: {str(e)}")
+                finally:
+                    self.http_server = None
+            
+            # Cleanup Flask app
             if self.flask_app:
                 self.flask_app = None
-                
+            
             # Kill any remaining processes using the port
             try:
                 import psutil
@@ -454,15 +476,27 @@ class HTTPService(StreamingService):
                     try:
                         for conn in proc.connections():
                             if conn.laddr.port == self.port:
+                                logging.info(f"Terminating process {proc.pid} using port {self.port}")
                                 psutil.Process(proc.pid).terminate()
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         pass
             except Exception as e:
                 logging.error(f"Error killing processes: {str(e)}")
             
+            # Reset state
             self._is_running = False
-            logging.info("HTTP server stopped successfully")
+            self._cleanup_event.clear()
+            
+            logging.info("Cleanup completed successfully")
             
         except Exception as e:
-            logging.error(f"Error stopping HTTP server: {str(e)}")
-            self._is_running = False 
+            logging.error(f"Error during cleanup: {str(e)}")
+            self._is_running = False
+    
+    def stop(self) -> None:
+        """Stop the HTTP server"""
+        if not self._is_running:
+            logging.warning("HTTP server is not running")
+            return
+        
+        self._cleanup() 

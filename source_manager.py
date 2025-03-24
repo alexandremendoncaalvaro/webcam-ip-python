@@ -72,7 +72,9 @@ class VideoFileSource(VideoSource):
         self.fps = 30
         self.frame_delay = 1.0 / self.fps
         self.last_frame_time = 0
-        self._lock = threading.Lock()  # Adiciona lock para thread safety
+        self._lock = threading.Lock()
+        self.max_retries = 3
+        self.retry_delay = 1.0  # segundos
         logging.info(f"VideoFileSource initialized for {file_path}")
         
     def open(self) -> bool:
@@ -119,6 +121,47 @@ class VideoFileSource(VideoSource):
                 logging.error(f"Error reading frame: {str(e)}")
                 return False, None
     
+    def _handle_ffmpeg_error(self, error: Exception) -> bool:
+        """Handle FFmpeg specific errors with retry mechanism"""
+        error_str = str(error).lower()
+        
+        # Identifica erros específicos do FFmpeg
+        if "ffmpeg" in error_str or "avcodec" in error_str:
+            logging.warning(f"FFmpeg error detected: {error_str}")
+            
+            # Tenta reabrir o vídeo
+            for attempt in range(self.max_retries):
+                try:
+                    logging.info(f"Attempting to recover from FFmpeg error (attempt {attempt + 1}/{self.max_retries})")
+                    time.sleep(self.retry_delay)
+                    
+                    # Libera recursos atuais
+                    if self.capture:
+                        self.capture.release()
+                    
+                    # Tenta reabrir
+                    self.capture = cv2.VideoCapture(self.file_path)
+                    if self.capture.isOpened():
+                        logging.info("Successfully recovered from FFmpeg error")
+                        return True
+                    
+                except Exception as retry_error:
+                    logging.error(f"Error during recovery attempt {attempt + 1}: {str(retry_error)}")
+            
+            logging.error("Failed to recover from FFmpeg error after all attempts")
+            return False
+        
+        return False
+    
+    def read_frame_with_retry(self) -> Tuple[bool, Optional[cv2.Mat]]:
+        """Read frame with FFmpeg error handling and retry mechanism"""
+        try:
+            return self.read_frame()
+        except Exception as e:
+            if self._handle_ffmpeg_error(e):
+                return self.read_frame()  # Tenta ler novamente após recuperação
+            return False, None
+    
     def set_resolution(self, width: int, height: int) -> None:
         # Video files maintain their original resolution
         logging.info(f"Resolution set to {width}x{height} (ignored for video files)")
@@ -126,8 +169,12 @@ class VideoFileSource(VideoSource):
     def release(self) -> None:
         if self.capture:
             logging.info("Releasing video capture")
-            self.capture.release()
-            self.capture = None
+            try:
+                self.capture.release()
+            except Exception as e:
+                logging.error(f"Error releasing video capture: {str(e)}")
+            finally:
+                self.capture = None
     
     def is_opened(self) -> bool:
         return self.capture is not None and self.capture.isOpened()
